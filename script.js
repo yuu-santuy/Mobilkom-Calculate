@@ -437,6 +437,7 @@ async function processFile(files) {
                     if (!row || row.length === 0) continue;
 
                     rawData.push({
+                        _src: file.name, // [TAMBAHAN] asal file, dipakai untuk laporan duplikat
                         NodeID: row[idxNodeID],
                         Date: row[idxDate],
                         ScanTime: idxScanTime >= 0 ? row[idxScanTime] : null,
@@ -470,6 +471,31 @@ async function processFile(files) {
         rawData = rawData.filter(r => r.NodeID !== null && r.NodeID !== '' && r.Date !== null && r.Date !== '');
         if (rawData.length === 0) throw new Error('Sheet ditemukan tapi tidak ada baris data valid (NodeID/Date kosong semua).');
 
+        // [TAMBAHAN] Buang baris duplikat (sumur + tanggal + jam scan yang sama).
+        // Mencegah data terhitung dobel kalau ada 2 file yang isinya sama ikut ter-upload
+        // (contoh: availability jadi 143% karena 1 hari masuk 2x). Baris pertama dipertahankan.
+        // Baris tanpa ScanTime (data summary) tidak disentuh.
+        const duplicateInfo = { removed: 0, byFile: {} };
+        {
+            const seenKeys = new Set();
+            const uniqueRows = [];
+            for (const r of rawData) {
+                if (r.ScanTime === null || r.ScanTime === undefined || r.ScanTime === '') {
+                    uniqueRows.push(r);
+                    continue;
+                }
+                const k = `${String(r.NodeID).trim()}|${r.Date}|${r.ScanTime}`;
+                if (seenKeys.has(k)) {
+                    duplicateInfo.removed++;
+                    duplicateInfo.byFile[r._src] = (duplicateInfo.byFile[r._src] || 0) + 1;
+                    continue;
+                }
+                seenKeys.add(k);
+                uniqueRows.push(r);
+            }
+            rawData = uniqueRows;
+        }
+
         await setLoadingStep('Mengelompokkan per sumur & tanggal...', 60);
         const grouped = groupData(rawData);
 
@@ -492,6 +518,8 @@ async function processFile(files) {
         appState.sheetDiagnostics = sheetDiagnostics;
         appState.usedSheetNames = usedSheetNames;
         appState.validRowCount = rawData.length;
+        appState.duplicateInfo = duplicateInfo; // [TAMBAHAN]
+        const over100Count = processedData.filter(d => d.availability > 100).length; // [TAMBAHAN]
         appState.uploadHistory.push({
             fileName: files.length === 1 ? files[0].name : `${files.length} file digabung`,
             timestamp: new Date(),
@@ -516,6 +544,14 @@ async function processFile(files) {
             showMergeReportModal(mergeReport);
         } else {
             showToast(`✅ Data berhasil diproses: ${processedData.length} baris (sumur × tanggal).`, 'success');
+        }
+
+        // [TAMBAHAN] Peringatan duplikat & availability > 100%
+        if (duplicateInfo.removed > 0) {
+            showToast(`ℹ️ ${duplicateInfo.removed.toLocaleString('id-ID')} baris duplikat otomatis dibuang (detail di panel diagnostik).`, 'info');
+        }
+        if (over100Count > 0) {
+            showToast(`⚠️ ${over100Count} data (sumur × tanggal) punya availability > 100%. Cek file sumber, kemungkinan ada baris dobel.`, 'info');
         }
 
     } catch (err) {
@@ -696,6 +732,13 @@ function renderDiagnosticPanel() {
     });
 
     html += `<p><b>Total baris valid dipakai:</b> ${validRowCount} baris.</p>`;
+
+    // [TAMBAHAN] Info baris duplikat yang dibuang
+    const dup = appState.duplicateInfo;
+    if (dup && dup.removed > 0) {
+        const fileList = Object.entries(dup.byFile).map(([f, n]) => `"${f}" (${n.toLocaleString('id-ID')} baris)`).join(', ');
+        html += `<p style="color:#b45309;"><b>⚠️ ${dup.removed.toLocaleString('id-ID')} baris duplikat dibuang</b> (sumur + tanggal + jam scan sama dengan baris dari file lain/sebelumnya). File yang berisi duplikat: ${fileList}.</p>`;
+    }
     body.innerHTML = html;
 }
 

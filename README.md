@@ -42,6 +42,7 @@ Untuk dipakai bersama (bukan cuma di komputer sendiri), upload folder ini ke Git
 - **Availability**: `COMM_PERCENT` (jika data summary) atau jumlah baris (jika data mentah per menit).
 - **Sensor**: `FLOW_RATE`, `INTERNAL_TEMP_C`, `SUPPLY_VOLTAGE`, `BATTERY_VOLTAGE`.
 - **Tambahan**: `CONTROLLER_TYPE`, `HOURLY_RUNTIME`, `DAILY_FLOW_RATE`, `GRAND_TOTAL_RATE`.
+- NodeID berbentuk scientific notation pada CSV (mis. `7.00E-36`) dikonversi ke bentuk ringkas (`7E-36`) dan dicatat di panel diagnostik. Karena CSV tidak dapat memastikan apakah teks awalnya memang identifier seperti itu, cocokkan hasil konversi dengan sumber data asli.
 
 ### Rumus Availability
 ```
@@ -227,6 +228,11 @@ Semua kolom parameter verifikasi (`*_VERIFICATION`) **dideteksi otomatis** dari 
 - **Sheet "Ringkasan Bulanan"**: Per bulan + RTU + Fasilitas, aggregate breakdown per parameter
 - **Sheet "Data Gabungan"**: Semua header asli dari file input, untuk referensi
 - **PDF**: Halaman pertama detail baris, halaman kedua ringkasan harian, halaman ketiga ringkasan bulanan
+- Kolom parameter pada ringkasan PDF mengikuti seluruh kolom `*_VERIFICATION` yang terdeteksi, bukan daftar parameter tetap.
+
+## Normalisasi NodeID CEOR
+
+Modul CEOR menghapus suffix `EXT` dari NodeID untuk pengelompokan. Setelah pemrosesan, dashboard menampilkan notifikasi pasangan nilai asli dan hasil normalisasi agar perubahan identifier terlihat dan dapat diperiksa.
 
 ---
 

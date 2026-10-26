@@ -471,6 +471,24 @@ async function processFile(files) {
         rawData = rawData.filter(r => r.NodeID !== null && r.NodeID !== '' && r.Date !== null && r.Date !== '');
         if (rawData.length === 0) throw new Error('Sheet ditemukan tapi tidak ada baris data valid (NodeID/Date kosong semua).');
 
+        // [FIX] Deteksi & konversi NodeID scientific notation akibat artefak Excel CSV.
+        // Excel mengubah nama sumur seperti "7E-36" → "7.00E-36" saat save-as CSV karena dianggap angka.
+        // Regex cocokkan pola angka+E+angka, lalu konversi balik ke format nama sumur asli.
+        const sciNotationConversions = {};
+        rawData.forEach(r => {
+            const id = String(r.NodeID).trim();
+            if (/^[\d.]+[Ee][+\-]\d+$/.test(id)) {
+                const upper = id.toUpperCase();
+                const eIdx = upper.indexOf('E');
+                const prefix = upper.slice(0, eIdx).replace(/\.0+$/, '').replace(/(\.\d*[1-9])0+$/, '$1');
+                const suffix = upper.slice(eIdx); // e.g. "E-36"
+                const converted = prefix + suffix;
+                if (!sciNotationConversions[id]) sciNotationConversions[id] = converted;
+                r.NodeID = converted;
+            }
+        });
+        appState.sciNotationConversions = sciNotationConversions;
+
         // [TAMBAHAN] Buang baris duplikat (sumur + tanggal + jam scan yang sama).
         // Mencegah data terhitung dobel kalau ada 2 file yang isinya sama ikut ter-upload
         // (contoh: availability jadi 143% karena 1 hari masuk 2x). Baris pertama dipertahankan.
@@ -739,6 +757,15 @@ function renderDiagnosticPanel() {
         const fileList = Object.entries(dup.byFile).map(([f, n]) => `"${f}" (${n.toLocaleString('id-ID')} baris)`).join(', ');
         html += `<p style="color:#b45309;"><b>⚠️ ${dup.removed.toLocaleString('id-ID')} baris duplikat dibuang</b> (sumur + tanggal + jam scan sama dengan baris dari file lain/sebelumnya). File yang berisi duplikat: ${fileList}.</p>`;
     }
+
+    // [FIX 1] Info konversi scientific notation NodeID
+    const sci = appState.sciNotationConversions || {};
+    const sciEntries = Object.entries(sci);
+    if (sciEntries.length > 0) {
+        const list = sciEntries.map(([raw, fixed]) => `<code>${raw}</code> → <code>${fixed}</code>`).join(', ');
+        html += `<p style="color:#0369a1;"><b>ℹ️ ${sciEntries.length} NodeID dikonversi dari scientific notation (artefak Excel CSV):</b> ${list}.</p>`;
+    }
+
     body.innerHTML = html;
 }
 

@@ -855,6 +855,9 @@ document.getElementById('opm-export-pdf').addEventListener('click', () => {
     doc.setTextColor(255,255,255); doc.setFontSize(11); doc.setFont(undefined,'bold');
     doc.text('RINGKASAN HARIAN PER RTU / FASILITAS', W/2, 7, { align: 'center' });
 
+    // [FIX 3] Gunakan paramCols dinamis — tidak lagi hardcode T1/T2/T3/T4/WL/Press
+    const paramCols = opmState.paramCols;
+
     const dailyPdfMap = {};
     opmState.allRows.forEach(r => {
         const date = r.date || 'Unknown';
@@ -864,49 +867,28 @@ document.getElementById('opm-export-pdf').addEventListener('click', () => {
         const nodeType = r.nodeType || '-';
         const key = `${date}__${rtu}__${facility}__${team}__${nodeType}`;
         if (!dailyPdfMap[key]) {
-            dailyPdfMap[key] = {
-                date, rtu, facility, team, nodeType,
-                total: 0, accepted: 0,
-                t1Sum: 0, t1Count: 0,
-                t2Sum: 0, t2Count: 0,
-                t3Sum: 0, t3Count: 0,
-                t4Sum: 0, t4Count: 0,
-                wlSum: 0, wlCount: 0,
-                pSum: 0, pCount: 0
-            };
+            const paramAccepted = {};
+            paramCols.forEach(pc => { paramAccepted[pc.verifCol] = 0; });
+            dailyPdfMap[key] = { date, rtu, facility, team, nodeType, total: 0, accepted: 0, paramAccepted };
         }
         dailyPdfMap[key].total++;
         if (r.statusMain === 'Accepted') dailyPdfMap[key].accepted++;
-        const raw = r.raw || {};
-        const t1 = parseFloat(raw['AVG_TEMP_1_NDC'] ?? raw['AVG_TEMP1']);
-        if (!isNaN(t1)) { dailyPdfMap[key].t1Sum += t1; dailyPdfMap[key].t1Count++; }
-        const t2 = parseFloat(raw['AVG_TEMP_2_NDC'] ?? raw['AVG_TEMP2']);
-        if (!isNaN(t2)) { dailyPdfMap[key].t2Sum += t2; dailyPdfMap[key].t2Count++; }
-        const t3 = parseFloat(raw['AVG_TEMP_3_NDC'] ?? raw['AVG_TEMP3']);
-        if (!isNaN(t3)) { dailyPdfMap[key].t3Sum += t3; dailyPdfMap[key].t3Count++; }
-        const t4 = parseFloat(raw['AVG_TEMP_4'] ?? raw['AVG_TEMP4']);
-        if (!isNaN(t4)) { dailyPdfMap[key].t4Sum += t4; dailyPdfMap[key].t4Count++; }
-        const wl = parseFloat(raw['AVG_WATER_LEVEL'] ?? raw['AVG_WL']);
-        if (!isNaN(wl)) { dailyPdfMap[key].wlSum += wl; dailyPdfMap[key].wlCount++; }
-        const p = parseFloat(raw['AVG_PRESSURE'] ?? raw['AVG_PRESS']);
-        if (!isNaN(p)) { dailyPdfMap[key].pSum += p; dailyPdfMap[key].pCount++; }
+        paramCols.forEach(pc => {
+            if (r.paramStatuses[pc.verifCol] === 'Accepted') dailyPdfMap[key].paramAccepted[pc.verifCol]++;
+        });
     });
 
     const dailyPdfList = Object.values(dailyPdfMap).sort((a,b) => a.date.localeCompare(b.date) || String(a.rtu).localeCompare(String(b.rtu), undefined, {numeric:true}));
+    const dailyParamHeaders = paramCols.map(pc => pc.label.length > 8 ? pc.label.substring(0,8) : pc.label);
 
     doc.autoTable({
         startY: 14,
-        head: [['Tanggal','RTU','Facility','Team','Node','Tot','Acc','Rej','Rate','T1','T2','T3','T4','WL','Press']],
+        head: [['Tanggal','RTU','Facility','Team','Node','Tot','Acc','Rej','Rate', ...dailyParamHeaders]],
         body: dailyPdfList.map(item => {
             const rejected = item.total - item.accepted;
             const rate = item.total ? ((item.accepted / item.total) * 100).toFixed(1) + '%' : '0.0%';
-            const t1 = item.t1Count ? `${item.t1Count}` : 'Rej';
-            const t2 = item.t2Count ? `${item.t2Count}` : 'Rej';
-            const t3 = item.t3Count ? `${item.t3Count}` : 'Rej';
-            const t4 = item.t4Count ? `${item.t4Count}` : 'Rej';
-            const wl = item.wlCount ? `${item.wlCount}` : 'Rej';
-            const pr = item.pCount ? `${item.pCount}` : 'Rej';
-            return [item.date, String(item.rtu), item.facility.substring(0,15), item.team, item.nodeType, item.total, item.accepted, rejected, rate, t1, t2, t3, t4, wl, pr];
+            const paramVals = paramCols.map(pc => item.paramAccepted[pc.verifCol] > 0 ? String(item.paramAccepted[pc.verifCol]) : 'Rej');
+            return [item.date, String(item.rtu), item.facility.substring(0,15), item.team, item.nodeType, item.total, item.accepted, rejected, rate, ...paramVals];
         }),
         headStyles: { fillColor: [31,56,100], textColor: 255, fontSize: 6.5 },
         bodyStyles: { fontSize: 6 },
@@ -937,49 +919,27 @@ document.getElementById('opm-export-pdf').addEventListener('click', () => {
         const nodeType = r.nodeType || '-';
         const key = `${month}__${rtu}__${facility}__${team}__${nodeType}`;
         if (!monthlyPdfMap[key]) {
-            monthlyPdfMap[key] = {
-                month, rtu, facility, team, nodeType,
-                totalDays: 0, accepted: 0,
-                t1Sum: 0, t1Count: 0,
-                t2Sum: 0, t2Count: 0,
-                t3Sum: 0, t3Count: 0,
-                t4Sum: 0, t4Count: 0,
-                wlSum: 0, wlCount: 0,
-                pSum: 0, pCount: 0
-            };
+            const paramAccepted = {};
+            paramCols.forEach(pc => { paramAccepted[pc.verifCol] = 0; });
+            monthlyPdfMap[key] = { month, rtu, facility, team, nodeType, totalDays: 0, accepted: 0, paramAccepted };
         }
         monthlyPdfMap[key].totalDays++;
         if (r.statusMain === 'Accepted') monthlyPdfMap[key].accepted++;
-        const raw = r.raw || {};
-        const t1 = parseFloat(raw['AVG_TEMP_1_NDC'] ?? raw['AVG_TEMP1']);
-        if (!isNaN(t1)) { monthlyPdfMap[key].t1Sum += t1; monthlyPdfMap[key].t1Count++; }
-        const t2 = parseFloat(raw['AVG_TEMP_2_NDC'] ?? raw['AVG_TEMP2']);
-        if (!isNaN(t2)) { monthlyPdfMap[key].t2Sum += t2; monthlyPdfMap[key].t2Count++; }
-        const t3 = parseFloat(raw['AVG_TEMP_3_NDC'] ?? raw['AVG_TEMP3']);
-        if (!isNaN(t3)) { monthlyPdfMap[key].t3Sum += t3; monthlyPdfMap[key].t3Count++; }
-        const t4 = parseFloat(raw['AVG_TEMP_4'] ?? raw['AVG_TEMP4']);
-        if (!isNaN(t4)) { monthlyPdfMap[key].t4Sum += t4; monthlyPdfMap[key].t4Count++; }
-        const wl = parseFloat(raw['AVG_WATER_LEVEL'] ?? raw['AVG_WL']);
-        if (!isNaN(wl)) { monthlyPdfMap[key].wlSum += wl; monthlyPdfMap[key].wlCount++; }
-        const p = parseFloat(raw['AVG_PRESSURE'] ?? raw['AVG_PRESS']);
-        if (!isNaN(p)) { monthlyPdfMap[key].pSum += p; monthlyPdfMap[key].pCount++; }
+        paramCols.forEach(pc => {
+            if (r.paramStatuses[pc.verifCol] === 'Accepted') monthlyPdfMap[key].paramAccepted[pc.verifCol]++;
+        });
     });
 
     const monthlyPdfList = Object.values(monthlyPdfMap).sort((a,b) => a.month.localeCompare(b.month) || String(a.rtu).localeCompare(String(b.rtu), undefined, {numeric:true}));
 
     doc.autoTable({
         startY: 14,
-        head: [['Bulan','RTU','Facility','Team','Node','Days','Acc','Rej','Rate','T1','T2','T3','T4','WL','Press']],
+        head: [['Bulan','RTU','Facility','Team','Node','Days','Acc','Rej','Rate', ...dailyParamHeaders]],
         body: monthlyPdfList.map(item => {
             const rejected = item.totalDays - item.accepted;
             const rate = item.totalDays ? ((item.accepted / item.totalDays) * 100).toFixed(1) + '%' : '0.0%';
-            const t1 = item.t1Count ? `${item.t1Count}` : 'Rej';
-            const t2 = item.t2Count ? `${item.t2Count}` : 'Rej';
-            const t3 = item.t3Count ? `${item.t3Count}` : 'Rej';
-            const t4 = item.t4Count ? `${item.t4Count}` : 'Rej';
-            const wl = item.wlCount ? `${item.wlCount}` : 'Rej';
-            const pr = item.pCount ? `${item.pCount}` : 'Rej';
-            return [item.month, String(item.rtu), item.facility.substring(0,15), item.team, item.nodeType, item.totalDays, item.accepted, rejected, rate, t1, t2, t3, t4, wl, pr];
+            const paramVals = paramCols.map(pc => item.paramAccepted[pc.verifCol] > 0 ? String(item.paramAccepted[pc.verifCol]) : 'Rej');
+            return [item.month, String(item.rtu), item.facility.substring(0,15), item.team, item.nodeType, item.totalDays, item.accepted, rejected, rate, ...paramVals];
         }),
         headStyles: { fillColor: [31,56,100], textColor: 255, fontSize: 6.5 },
         bodyStyles: { fontSize: 6 },

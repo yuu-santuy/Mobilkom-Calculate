@@ -280,13 +280,15 @@ async function ceorProcessFiles(files, isAppend = false) {
         }
 
         let newRecordsCount = 0;
+        const allNormalizations = {}; // [FIX 2] kumpulan semua normalisasi dari semua file
 
         for (let i = 0; i < files.length; i++) {
             const file = files[i];
             try {
-                const records = await ceorReadSingleFile(file);
+                const { records, normalizationMap } = await ceorReadSingleFile(file);
                 CEOR_APP.rawRecords = CEOR_APP.rawRecords.concat(records);
                 newRecordsCount += records.length;
+                Object.assign(allNormalizations, normalizationMap);
             } catch (error) {
                 console.error(`Gagal membaca file ${file.name}:`, error);
                 alert(`Terjadi kesalahan saat membaca file ${file.name}: ${error.message}`);
@@ -299,6 +301,13 @@ async function ceorProcessFiles(files, isAppend = false) {
             ceorPopulateNodeIdDropdown();
             ceorApplyFilters();
             ceorShowNotification(`Berhasil memproses ${newRecordsCount} baris data mentah.`, 'success');
+
+            // [FIX 2] Tampilkan notifikasi normalisasi NodeID kalau ada
+            const normEntries = Object.entries(allNormalizations);
+            if (normEntries.length > 0) {
+                const list = normEntries.map(([raw, fixed]) => `"${raw}" → "${fixed}"`).join(', ');
+                ceorShowNotification(`ℹ️ ${normEntries.length} NodeID dinormalisasi (suffix EXT dilepas): ${list}`, 'info');
+            }
         } else {
             ceorShowNotification('Tidak ada data valid yang dapat diproses.', 'warning');
         }
@@ -343,6 +352,7 @@ function ceorReadSingleFile(file) {
 
                 // 2. Parse Baris Data Mentah
                 const records = [];
+                const normalizationMap = {}; // [FIX 2] raw NodeID → normalized NodeID
                 for (let r = 1; r < rawJson.length; r++) {
                     const row = rawJson[r];
                     if (!row || row.length === 0) continue;
@@ -354,8 +364,14 @@ function ceorReadSingleFile(file) {
 
                     // Validasi minimal NodeID dan Tanggal
                     if (rawNodeId !== null && rawNodeId !== undefined && rawTanggal !== null && rawTanggal !== undefined) {
+                        const rawIdStr = String(rawNodeId).trim();
                         const nodeIdStr = normalizeNodeId(rawNodeId);
                         if (nodeIdStr === '') continue;
+
+                        // [FIX 2] Catat NodeID yang dinormalisasi (EXT distrip)
+                        if (rawIdStr !== nodeIdStr && !normalizationMap[rawIdStr]) {
+                            normalizationMap[rawIdStr] = nodeIdStr;
+                        }
 
                         const { dateKey, minuteKey } = ceorExtractDateTimeKeys(rawTanggal);
                         const numPress = parseNumeric(rawPress);
@@ -372,7 +388,7 @@ function ceorReadSingleFile(file) {
                     }
                 }
 
-                resolve(records);
+                resolve({ records, normalizationMap });
 
             } catch (err) {
                 reject(err);
